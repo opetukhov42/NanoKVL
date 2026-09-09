@@ -35,23 +35,23 @@ Build the hardware adapter using the original verified `KFDtool` open-collector 
 
 ![KFD Minimal Schematic](https://raw.githubusercontent.com/omahacommsys/KFDtool/master/doc/pic/basic_hw_schematic.png)
 
-### Open-Collector Circuit Description
+### Open-Collector Circuit Description (Hardwired Sense)
 
 ```text
                            +------------------------+
                            |      Arduino Nano      |
                            |       (ATmega328P)     |
                            +------------------------+
-                               |     |    |
-     [Pushbutton]              |     |    |
-        +---\ --- GND <--------+ D2  |    |
-                                     |    |
-     [Red LED]                       |    |
-        +---[ 330Ω ]--->|--- GND <---+ D4 |
-                                          |
-     [Green LED]                          |
-        +---[ 330Ω ]--->|--- GND <--------+ D6
-                               
+                               |     |    |    |
+     [Pushbutton]              |     |    |    |
+        +---\ --- GND <--------+ D2  |    |    |
+                                     |    |    |
+     [Red LED]                       |    |    |
+        +---[ 330Ω ]--->|--- GND <---+ D4 |    |
+                                          |    |
+     [Green LED]                          |    |
+        +---[ 330Ω ]--->|--- GND <--------+ D6 |
+                                               |
      === Safe Open-Collector 3-Wire Interface ===
 
       Arduino D3 (DATA OUT) ----[ 2.2kΩ ]----+----> Base (Q1: 2N3904 / NPN)
@@ -62,16 +62,16 @@ Build the hardware adapter using the original verified `KFDtool` open-collector 
                                                             |
                                       Radio Pullup / +3.3V -+
 
-      Arduino D5 (SENSE)    -------------------------------------> Radio 3WI SENSE Line
-
-      Arduino D7 (DATA IN)  <------------------------------------+
+      Arduino D5 (DATA IN)  <------------------------------------+
                                                                  |
                                        (Connected to Collector Q1 / Radio DATA)
 
-      GND                   -------------------------------------> Radio GND
+      GND                   -----------------+-------------------> Radio GND
+                                             |
+                                             +-------------------> Radio 3WI SENSE Line (Hardwired Low)
 ```
 
-*(Refer directly to the schematic image above for component values, protective series resistors, and diode clamps).*
+*(Note: Hardwiring the Radio SENSE line to GND puts the radio into Keyload mode as soon as the cable is physically connected, eliminating the need for a dedicated Arduino pin to drive it).*
 
 ---
 
@@ -82,8 +82,9 @@ Build the hardware adapter using the original verified `KFDtool` open-collector 
 | **D2** | Pushbutton Input | Momentary N.O. switch connected to GND (Internal `INPUT_PULLUP` enabled) |
 | **D4** | Red LED Output | Anode via 220Ω–330Ω resistor; Cathode to GND |
 | **D6** | Green LED Output | Anode via 220Ω–330Ω resistor; Cathode to GND |
-| **D3** | 3WI DATA Line | Transmit/Receive 3WI data via open-collector transistor circuit |
-| **D5** | 3WI SENSE Line | Sense/Wake line via transistor stage or level-shifted line |
+| **D3** | 3WI DATA OUT | Transmit 3WI data to radio via open-collector transistor circuit |
+| **D5** | 3WI DATA IN | Receive 3WI data from radio (connected to transistor collector) |
+| **N/A** | 3WI SENSE Line | **Hardwired to GND** |
 | **GND** | Ground Reference | Common ground to Radio Hirose / MX / TRS connector shield |
 
 ---
@@ -91,12 +92,13 @@ Build the hardware adapter using the original verified `KFDtool` open-collector 
 ## Installation & Flashing
 
 1. Connect your Arduino Nano via USB.
-2. Open `NanoKVL.ino` in the Arduino IDE.
-3. Under **Tools**:
+2. (Optional) If you modified the code to remove the `D7` sense logic, ensure `wireDriveSenseLow()` and `wireReleaseSense()` are empty or removed. The original code will also work fine as-is (toggling an unconnected pin).
+3. Open `NanoKVL.ino` in the Arduino IDE.
+4. Under **Tools**:
    - **Board:** "Arduino Nano"
    - **Processor:** "ATmega328P" (or "ATmega328P (Old Bootloader)" depending on your board)
    - **Port:** Select the appropriate USB-serial COM port.
-4. Click **Upload**.
+5. Click **Upload**.
 
 ---
 
@@ -115,62 +117,21 @@ Connect to the Nano using any serial terminal emulator:
 
 ### 1. `list`
 Prints all 16 EEPROM storage slots, showing algorithm ID, KID, CKR, and hex key contents.
-```text
-> list
---- Configured EEPROM Slots ---
-[Slot 01] Algo: 0xAA | KID: 0x0001 | CKR: 1 | Key: 0123456789ABCDEF
-[Slot 02] Algo: 0x84 | KID: 0x0002 | CKR: 2 | Key: 00010203...
-[Slot 03] -- EMPTY --
-...
-```
 
 ### 2. `set <slot> <algoHex> <kidHex> <ckrDec> <keyHex>`
 Stores a key into the specified EEPROM slot (1 to 16).
-- `<slot>`: Slot number (`1` - `16`).
-- `<algoHex>`: Algorithm identifier in hex (`84` for AES-256, `81` for DES-OFB, `AA` for ADP).
-- `<kidHex>`: Key ID in hex (`0001` - `FFFF`).
-- `<ckrDec>`: Common Key Reference in decimal (`1` - `4096`).
-- `<keyHex>`: Raw cryptographic key string in hexadecimal.
-
-**Examples:**
-- **Store an ADP Key in Slot 1:**
-  ```text
-  set 1 aa 0001 1 0123456789ABCDEF
-  ```
-- **Store an AES-256 Key in Slot 2:**
-  ```text
-  set 2 84 0002 2 000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F
-  ```
 
 ### 3. `push <slot>`
 Pushes the key in the chosen slot over the 3WI bus to the connected radio.
-```text
-> push 1
-Pushing slot 1 to radio...
-SUCCESS: Key accepted by radio
-```
 
 ### 4. `ping`
 Transmits an MR Detect frame to check if a radio is connected and responding.
-```text
-> ping
-Pinging radio...
-SUCCESS: Radio detected
-```
 
 ### 5. `erase <slot>`
 Zeroes out and invalidates a single slot in EEPROM.
-```text
-> erase 1
-Slot 1 erased.
-```
 
 ### 6. `eraseall`
 Wipes all 16 key slots in EEPROM.
-```text
-> eraseall
-All slots cleared from EEPROM.
-```
 
 ---
 
