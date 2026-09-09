@@ -23,48 +23,55 @@ This project eliminates the need for the original Windows desktop application (.
 
 ---
 
-## Hardware Schematic
+## Hardware Interface & Schematic
 
-### Original Minimal Circuit Diagram
-The minimal 3-wire interface circuit from the original `KFDtool` / `KFD-AVR` project:
+### Hardware Safety & Level Shifting
+The P25 3-Wire Interface (3WI) is an active-low, open-collector bus. Subscriber radios typically use **3.3V or lower logic levels** on their accessory side connectors. 
+
+> ⚠️ **CRITICAL HARDWARE WARNING:** Never connect 5V Arduino GPIO pins directly to modern radio lines without an open-collector/open-drain switching circuit or level converter. Doing so risks permanent electrical damage to the radio's internal encryption module or baseband interface ASIC.
+
+### Reference Hardware Schematic
+Build the hardware adapter using the original verified `KFDtool` open-collector interface circuit:
 
 ![KFD Minimal Schematic](https://raw.githubusercontent.com/omahacommsys/KFDtool/master/doc/pic/basic_hw_schematic.png)
 
-### Complete Standalone Wiring Diagram
+### Open-Collector Circuit Description
 
 ```text
                            +------------------------+
                            |      Arduino Nano      |
                            |       (ATmega328P)     |
                            +------------------------+
-                               |     |    |    |
-     [Pushbutton]              |     |    |    |
-        +---\ --- GND <--------+ D2  |    |    |
-                                     |    |    |
-     [Red LED]                       |    |    |
-        +---[ 330Ω ]--->|--- GND <---+ D4 |    |
-                                          |    |
-     [Green LED]                          |    |
-        +---[ 330Ω ]--->|--- GND <--------+ D6 |
-                                               |
-     === P25 3-Wire Radio Interface ===        |
-                                               |
-      D3 (DATA)  --------+---------------------+
-                         |
-                       [10kΩ] (Pullup to +5V)
-                         |
-                         +------------------------------------> Radio DATA Line (TRS Tip)
-                                                                 
-      D5 (SENSE) --------+---------------------+
-                         |                     |
-                       [10kΩ] (Pullup to +5V)  |
-                         |                     |
-                         +---------------------+--------------> Radio SENSE Line (TRS Ring)
+                               |     |    |
+     [Pushbutton]              |     |    |
+        +---\ --- GND <--------+ D2  |    |
+                                     |    |
+     [Red LED]                       |    |
+        +---[ 330Ω ]--->|--- GND <---+ D4 |
+                                          |
+     [Green LED]                          |
+        +---[ 330Ω ]--->|--- GND <--------+ D6
+                               
+     === Safe Open-Collector 3-Wire Interface ===
 
-      GND        ---------------------------------------------> Radio GND (TRS Shield)
+      Arduino D3 (DATA OUT) ----[ 2.2kΩ ]----+----> Base (Q1: 2N3904 / NPN)
+                                             |
+                                            [E] Emitter ---> GND
+                                             |
+                                            [C] Collector --+----> Radio 3WI DATA Line
+                                                            |
+                                      Radio Pullup / +3.3V -+
+
+      Arduino D5 (SENSE)    -------------------------------------> Radio 3WI SENSE Line
+
+      Arduino D7 (DATA IN)  <------------------------------------+
+                                                                 |
+                                       (Connected to Collector Q1 / Radio DATA)
+
+      GND                   -------------------------------------> Radio GND
 ```
 
-> **Note on Pullups:** While the microcontroller has internal pullups configured, external 4.7kΩ to 10kΩ pull-up resistors to 5V on the DATA and SENSE lines are strongly recommended to ensure clean rise times over longer keyload cables.
+*(Refer directly to the schematic image above for component values, protective series resistors, and diode clamps).*
 
 ---
 
@@ -75,8 +82,8 @@ The minimal 3-wire interface circuit from the original `KFDtool` / `KFD-AVR` pro
 | **D2** | Pushbutton Input | Momentary N.O. switch connected to GND (Internal `INPUT_PULLUP` enabled) |
 | **D4** | Red LED Output | Anode via 220Ω–330Ω resistor; Cathode to GND |
 | **D6** | Green LED Output | Anode via 220Ω–330Ω resistor; Cathode to GND |
-| **D3** | 3WI DATA | Bi-directional open-collector/drain data line (Radio Keyfill pin) |
-| **D5** | 3WI SENSE | Bi-directional sense line (Radio Keyload/Sense pin) |
+| **D3** | 3WI DATA Line | Transmit/Receive 3WI data via open-collector transistor circuit |
+| **D5** | 3WI SENSE Line | Sense/Wake line via transistor stage or level-shifted line |
 | **GND** | Ground Reference | Common ground to Radio Hirose / MX / TRS connector shield |
 
 ---
